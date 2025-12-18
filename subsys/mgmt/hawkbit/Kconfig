@@ -42,6 +42,31 @@ config HAWKBIT_AUTOHANDLER
 	help
 	  Activate autohandler to handle the update process automatically.
 
+if HAWKBIT_AUTOHANDLER
+
+config HAWKBIT_AUTOHANDLER_SYSTEM_WORKQUEUE
+	bool "hawkBit autohandler uses system workqueue"
+	select DEPRECATED
+	default y
+	help
+	  Autohandler work will be schedule to system workqueue.
+
+config HAWKBIT_AUTOHANDLER_WORKQUEUE_PRIORITY
+	int "hawkBit autohandler workqueue priority"
+	depends on !HAWKBIT_AUTOHANDLER_SYSTEM_WORKQUEUE
+	default 7
+	help
+	  Autohandler workqueue priority
+
+config HAWKBIT_AUTOHANDLER_WORKQUEUE_STACK_SIZE
+	int "hawkBit autohandler workqueue stack size"
+	depends on !HAWKBIT_AUTOHANDLER_SYSTEM_WORKQUEUE
+	default 4096
+	help
+	  Autohandler workqueue stack size
+
+endif # HAWKBIT_AUTOHANDLER
+
 config HAWKBIT_SHELL
 	bool "hawkBit shell utilities"
 	depends on SHELL

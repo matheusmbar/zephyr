@@ -14,6 +14,17 @@ LOG_MODULE_DECLARE(hawkbit);
 
 static void autohandler(struct k_work *work);
 
+#if IS_ENABLED(CONFIG_HAWKBIT_AUTOHANDLER_WORKQUEUE)
+struct k_work_q *handler_work_q = &k_sys_work_q;
+#else
+K_THREAD_STACK_DEFINE(hawkbit_work_stack, CONFIG_HAWKBIT_AUTOHANDLER_WORKQUEUE_STACK_SIZE);
+struct k_work_q hawkbit_work_q;
+static const struct k_work_queue_config hawkbit_work_q_config = {
+	.name = "hawkbit_work_q", .no_yield = false, .essential = false, 0};
+
+struct k_work_q *handler_work_q = &hawkbit_work_q;
+#endif
+
 static K_WORK_DELAYABLE_DEFINE(hawkbit_work_handle, autohandler);
 static K_WORK_DELAYABLE_DEFINE(hawkbit_work_handle_once, autohandler);
 
@@ -79,7 +90,8 @@ static void autohandler(struct k_work *work)
 	}
 
 	if (k_work_delayable_from_work(work) == &hawkbit_work_handle) {
-		k_work_reschedule(&hawkbit_work_handle, K_SECONDS(hawkbit_get_poll_interval()));
+		k_work_reschedule_for_queue(handler_work_q, &hawkbit_work_handle,
+					    K_SECONDS(hawkbit_get_poll_interval()));
 	}
 }
 
@@ -108,18 +120,30 @@ int hawkbit_autohandler_set_delay(k_timeout_t timeout, bool if_bigger)
 			(uint32_t)(timeout.ticks / CONFIG_SYS_CLOCK_TICKS_PER_SEC) / 3600,
 			(uint32_t)((timeout.ticks / CONFIG_SYS_CLOCK_TICKS_PER_SEC) % 3600) / 60,
 			(uint32_t)(timeout.ticks / CONFIG_SYS_CLOCK_TICKS_PER_SEC) % 60);
-		return k_work_reschedule(&hawkbit_work_handle, timeout);
+		return k_work_reschedule_for_queue(handler_work_q, &hawkbit_work_handle, timeout);
 	}
 	return 0;
 }
 
 void hawkbit_autohandler(bool auto_reschedule)
 {
+#if !IS_ENABLED(CONFIG_HAWKBIT_AUTOHANDLER_WORKQUEUE)
+	static bool work_initialized = false;
+	if (!work_initialized) {
+		LOG_INF("Initializing hawkbit autohandler workqueue");
+		k_work_queue_init(handler_work_q);
+		k_work_queue_start(handler_work_q, hawkbit_work_stack,
+				   K_THREAD_STACK_SIZEOF(hawkbit_work_stack),
+				   K_PRIO_PREEMPT(CONFIG_HAWKBIT_AUTOHANDLER_WORKQUEUE_PRIORITY),
+				   &hawkbit_work_q_config);
+		work_initialized = true;
+	}
+#endif
 	k_event_clear(&hawkbit_autohandler_event, UINT32_MAX);
 
 	if (auto_reschedule) {
-		k_work_reschedule(&hawkbit_work_handle, K_NO_WAIT);
+		k_work_reschedule_for_queue(handler_work_q, &hawkbit_work_handle, K_NO_WAIT);
 	} else {
-		k_work_reschedule(&hawkbit_work_handle_once, K_NO_WAIT);
+		k_work_reschedule_for_queue(handler_work_q, &hawkbit_work_handle_once, K_NO_WAIT);
 	}
 }
